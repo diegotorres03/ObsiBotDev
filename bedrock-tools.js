@@ -91,7 +91,7 @@ async function createVectorDB(dbName) {
  * @param {{systemPrompt: string, messages: string[]}} options
  * @return {*} 
  */
-async function askTitan(prompt, options?) {
+async function askTitan(prompt, options) {
   const { systemPrompt, messages } = options || {}
 
   const input = {

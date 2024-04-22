@@ -20,6 +20,6 @@
   },
   "include": [
     "**/*.ts"
-  ],
+, "bedrock-tools.js"  ],
 
 }

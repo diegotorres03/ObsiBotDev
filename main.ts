@@ -1,11 +1,12 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
 import {
+  changeCredentials, 
   html,
   askClaude,
   askTitan,
-  // } from './bedrock-tools'
-} from '../../../../tools'
+} from './bedrock-tools'
+// } from '../../../../tools'
 
 
 import { TimestreamQueryClient, QueryCommand, QueryRequest } from '@aws-sdk/client-timestream-query'
