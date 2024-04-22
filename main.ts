@@ -4,8 +4,42 @@ import {
   html,
   askClaude,
   askTitan,
-} from './bedrock-tools'
-// } from '../../../../tools'
+  // } from './bedrock-tools'
+} from '../../../../tools'
+
+
+import { TimestreamQueryClient, QueryCommand, QueryRequest } from '@aws-sdk/client-timestream-query'
+
+
+/**
+ * query AWS Timestream table
+ *
+ * @param {TimestreamQueryClient} client
+ * @param {string} query
+ * @param {*} params
+ * @return {*} 
+ */
+async function queryTimestream(client: TimestreamQueryClient, query, params?) {
+
+
+  const command = new QueryCommand({ QueryString: query })
+
+  console.log(command)
+
+  const response = await client.send(command)
+
+  console.log(response)
+
+  const columns = response.ColumnInfo?.map(column => column.Name)
+
+  const rows = response.Rows?.map(row => row.Data?.map(data => {
+    const key = Object.keys(data).shift() || 'ScalarValue'
+    return data[key]
+  }))
+
+  console.log(rows)
+  return { columns, rows, query }
+}
 
 // import { run } from '../../../../process-page'
 // Remember to rename these classes and interfaces!
@@ -30,75 +64,157 @@ export default class ObsiBotPlugin extends Plugin {
     console.log('ObsiBot Plugin loaded');
 
     // This creates an icon in the left ribbon.
-    const ribbonIconEl = this.addRibbonIcon('bot', 'ObsiBot', async (evt: MouseEvent) => {
+    const promptBotBtn = this.addRibbonIcon('bot', 'ObsiBot', async (evt: MouseEvent) => {
       // Called when the user clicks the icon.
       new Notice('asking claude!');
 
       const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 
       // Make sure the user is editing a Markdown file.
-      if (view) {
-        const editor = view.editor
-        // const str = '[[this text]] [[other#example]]';
-        const matches = view.data.match(/\[\[(.+?)\]\]/g) || []
-        const matchesSet = new Set(matches?.map(item =>
-          item.replace('[[', '').replace(']]', '')))
+      if (!view) return
+      const editor = view.editor
+      // const str = '[[this text]] [[other#example]]';
+      const matches = view.data.match(/\[\[(.+?)\]\]/g) || []
+      const matchesSet = new Set(matches?.map(item =>
+        item.replace('[[', '').replace(']]', '')))
 
-        console.log(matchesSet)
+      console.log(matchesSet)
 
-        let prompt = editor.getSelection()
-        if (prompt === '') prompt = editor.getValue()
-        const allfiles = this.app.vault.getMarkdownFiles()
+      let prompt = editor.getSelection()
+      if (prompt === '') prompt = editor.getValue()
+      const allfiles = this.app.vault.getMarkdownFiles()
 
-        let relevantFiles = allfiles.filter(file => matchesSet.has(file.name.replace('.md', '')))
+      let relevantFiles = allfiles.filter(file => matchesSet.has(file.name.replace('.md', '')))
 
-        console.log('relevantFiles')
-        console.log(relevantFiles)
+      console.log('relevantFiles')
+      console.log(relevantFiles)
 
-        const relevantContent = await Promise.all(relevantFiles.map(file => {
-          const fileContent = this.app.vault.cachedRead(file)
-          // return {
-          //   name: file.name,
-          //   content: fileContent
-          // }
-          return  fileContent.then(content => ({ file, content }))
-        }))
+      const relevantContent = await Promise.all(relevantFiles.map(file => {
+        const fileContent = this.app.vault.cachedRead(file)
+        // return {
+        //   name: file.name,
+        //   content: fileContent
+        // }
+        return fileContent.then(content => ({ file, content }))
+      }))
 
-        relevantContent.forEach((item, index) => {
-          console.log(item.file.name)
-          // prompt = content + '\n\n---\n\n' + prompt
-          // console.log([...matchesSet][index], content)
-          prompt = prompt.replace(`[[${item.file.name.replace('.md', '')}]]`, item.content)
+      relevantContent.forEach((item, index) => {
+        console.log(item.file.name)
+        // prompt = content + '\n\n---\n\n' + prompt
+        // console.log([...matchesSet][index], content)
+        prompt = prompt.replace(`[[${item.file.name.replace('.md', '')}]]`, item.content)
+      })
+
+
+
+      // console.log(relevantContent)
+      // editor.replaceRange(prompt,
+      //   editor.getCursor()
+      // );
+      // return
+
+
+      askClaude(prompt)
+        .then(response => {
+
+          const currentCursor = editor.getCursor()
+          if (this.settings.alwaysInsertAtTheEnd) editor.setCursor(editor.lastLine())
+
+          editor.replaceRange(
+            `\n\n## ObsiBot:\n\n${response}`,
+            editor.getCursor()
+          );
+          editor.setCursor(currentCursor)
         })
-
-
-
-        // console.log(relevantContent)
-        // editor.replaceRange(prompt,
-        //   editor.getCursor()
-        // );
-        // return
-
-
-        askClaude(prompt)
-          .then(response => {
-
-            const currentCursor = editor.getCursor()
-            if (this.settings.alwaysInsertAtTheEnd) editor.setCursor(editor.lastLine())
-
-            editor.replaceRange(
-              `\n\n## ObsiBot:\n\n${response}`,
-              editor.getCursor()
-            );
-            editor.setCursor(currentCursor)
-          })
-      }
-
-      // run()
     });
 
     // Perform additional things with the ribbon
-    ribbonIconEl.addClass('my-plugin-ribbon-class');
+    promptBotBtn.addClass('my-plugin-ribbon-class');
+
+    const queryDBBtn = this.addRibbonIcon('database', 'Query DB', async (evt: MouseEvent) => {
+      // Called when the user clicks the icon.
+      new Notice('querying db!');
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView)
+
+      const timeStreamRegex = /```timestream\n([\s\S]*?)\n```/gm
+
+
+      if (!view) return
+      const editor = view.editor
+      const selection = editor.getSelection()
+
+      const textToAnalyze = selection || view.data
+
+      const matches = textToAnalyze.match(timeStreamRegex) || []
+      console.log(matches)
+
+      if (matches.length === 0) {
+        new Notice('No Timestream queries found in selection')
+        return
+      }
+
+
+      const credentials = {
+        accessKeyId: this.settings.awsKeyId || process.env.AWS_KEY_ID || '', secretAccessKey: this.settings.awsSecretKey || process.env.AWS_SECRET_KEY || '',
+        // sessionToken: this.settings.token || process.env.AWS_SESSION_TOKEN || ''
+      }
+
+      const client = new TimestreamQueryClient({
+        region: 'us-east-2',
+        credentials
+      })
+
+
+      const responsePromises = matches.map(match => {
+        const query = match.replace('```timestream\n', '').replace('\n```', '')
+        console.log('query', query)
+        return queryTimestream(client, query)
+      })
+
+
+      function renderMDTable({ columns, rows }) {
+
+
+        const insertSeparators = number => {
+          let separators = ''
+          for (let i = 0; i < number; i++) {
+            separators += '---|'
+          }
+          return separators
+        }
+
+        const table = `|${columns?.join(' | ')}|\n|${insertSeparators(columns?.length || 1)}\n${rows?.map(row => `|${row?.join(' | ')}|`).join('\n')}
+  `
+
+        console.log(table)
+        return table
+      }
+
+      const responses = await Promise.all(responsePromises)
+
+      console.log(responses)
+
+      responses.forEach(res => {
+        console.log('working on ', res.query)
+        const table = renderMDTable(res)
+
+        const currentCursor = editor.getCursor()
+        if (this.settings.alwaysInsertAtTheEnd) editor.setCursor(editor.lastLine())
+
+
+        editor.replaceRange(
+          `\n\n#### Timestream Query result\n${table}`,
+          editor.getCursor()
+        );
+        editor.setCursor(currentCursor)
+        // console.log(table)
+        // view.data.replace(res.query, res.query + '\n\n' + table)
+      })
+
+
+
+
+    })
 
     // This adds a status bar item to the bottom of the app. Does not work on mobile apps.
     const statusBarItemEl = this.addStatusBarItem();

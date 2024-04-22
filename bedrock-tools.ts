@@ -105,7 +105,7 @@ async function askTitan(prompt, options?) {
 
 }
 
-async function askClaude(message,  options = { version: 'v1' }) {
+async function askClaude(message,  options = { version: 'v1', messages: [] }) {
   const versionMap = {
     v1: 'anthropic.claude-instant-v1',
     v2: 'anthropic.claude-v2',
