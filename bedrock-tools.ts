@@ -14,9 +14,24 @@ const toMD = new TurnDown()
 
 // function getTitanEmbeddings() { }
 
-const client = new BedrockRuntimeClient({
+let client = new BedrockRuntimeClient({
   region: 'us-west-2'
 })
+
+
+function changeCredentials(key, secret, token) {
+  client = new BedrockRuntimeClient({
+    region: 'us-west-2',
+    credentials: {
+      accessKeyId: key,
+      secretAccessKey: secret,
+      sessionToken: token,
+    },
+  })
+}
+
+
+
 
 async function getPage(url, name) {
   const res = await fetch(url)
@@ -177,6 +192,7 @@ function html(templates, ...values) {
 }
 
 module.exports = {
+  changeCredentials,
   getTitanEmbeddings,
   askTitan,
   createVectorDB,

@@ -45,14 +45,16 @@ async function queryTimestream(client: TimestreamQueryClient, query, params?) {
 // Remember to rename these classes and interfaces!
 
 interface ObsiBotPluginSettings {
-  awsKeyId: string;
-  awsSecretKey: string;
-  alwaysInsertAtTheEnd: boolean;
+  awsKeyId: string
+  awsSecretKey: string
+  awsSessionToken: string
+  alwaysInsertAtTheEnd: boolean
 }
 
 const DEFAULT_SETTINGS: ObsiBotPluginSettings = {
-  awsKeyId: 'default',
-  awsSecretKey: 'default',
+  awsKeyId: '',
+  awsSecretKey: '',
+  awsSessionToken: '',
   alwaysInsertAtTheEnd: false
 }
 
@@ -61,7 +63,12 @@ export default class ObsiBotPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
-    console.log('ObsiBot Plugin loaded');
+    console.log('ObsiBot Plugin loaded')
+
+    const key = this.settings.awsKeyId
+    const secret = this.settings.awsSecretKey
+    const token = this.settings.awsSessionToken
+    changeCredentials(key, secret, token)
 
     // This creates an icon in the left ribbon.
     const promptBotBtn = this.addRibbonIcon('bot', 'ObsiBot', async (evt: MouseEvent) => {
@@ -374,6 +381,18 @@ class SampleSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.awsSecretKey)
         .onChange(async (value) => {
           this.plugin.settings.awsSecretKey = value;
+          await this.plugin.saveSettings();
+        }))
+
+
+    new Setting(containerEl)
+      .setName('AWS_SESSION_TOKEN')
+      .setDesc('AWS session token')
+      .addText(text => text
+        .setPlaceholder('Enter your secret')
+        .setValue(this.plugin.settings.awsSessionToken)
+        .onChange(async (value) => {
+          this.plugin.settings.awsSessionToken = value;
           await this.plugin.saveSettings();
         }));
 
