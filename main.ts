@@ -1,7 +1,7 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, addIcon } from 'obsidian';
 
 import {
-  changeCredentials, 
+  changeCredentials,
   html,
   askClaude,
   askTitan,
@@ -11,6 +11,8 @@ import {
 
 import { TimestreamQueryClient, QueryCommand, QueryRequest } from '@aws-sdk/client-timestream-query'
 
+
+import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly'
 
 /**
  * query AWS Timestream table
@@ -62,6 +64,8 @@ const DEFAULT_SETTINGS: ObsiBotPluginSettings = {
 export default class ObsiBotPlugin extends Plugin {
   settings: ObsiBotPluginSettings;
 
+  isReading = false
+
   async onload() {
     await this.loadSettings();
     console.log('ObsiBot Plugin loaded')
@@ -70,6 +74,99 @@ export default class ObsiBotPlugin extends Plugin {
     const secret = this.settings.awsSecretKey
     const token = this.settings.awsSessionToken
     changeCredentials(key, secret, token)
+
+
+    addIcon('audio-waveform', '<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-audio-lines"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>')
+
+    // Read Selected Text or the entire page
+    const readTextBtn = this.addRibbonIcon('audio-waveform', 'Read out loud', async (event: MouseEvent) => {
+      new Notice('readong out loud!')
+
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView)
+
+      if (!view) return
+      const editor = view.editor
+      const selection = editor.getSelection()
+
+      const textToAnalyze = selection || view.data
+
+      console.log('preparing to read out loud')
+      console.log(textToAnalyze)
+
+      const credentials = {
+        accessKeyId: this.settings.awsKeyId || process.env.AWS_KEY_ID || '', secretAccessKey: this.settings.awsSecretKey || process.env.AWS_SECRET_KEY || '',
+        // sessionToken: this.settings.token || process.env.AWS_SESSION_TOKEN || ''
+      }
+      const client = new PollyClient({
+        region: 'us-east-2',
+        credentials
+      })
+
+      /*
+      //  VoiceId: "Aditi" || "Amy" || "Astrid" || "Bianca" || "Brian" || "Camila" || "Carla" || "Carmen" || "Celine" || "Chantal" || "Conchita" || "Cristiano" || "Dora" || "Emma" || "Enrique" || "Ewa" || "Filiz" || "Gabrielle" || "Geraint" || "Giorgio" || "Gwyneth" || "Hans" || "Ines" || "Ivy" || "Jacek" || "Jan" || "Joanna" || "Joey" || "Justin" || "Karl" || "Kendra" || "Kevin" || "Kimberly" || "Lea" || "Liv" || "Lotte" || "Lucia" || "Lupe" || "Mads" || "Maja" || "Marlene" || "Mathieu" || "Matthew" || "Maxim" || "Mia" || "Miguel" || "Mizuki" || "Naja" || "Nicole" || "Olivia" || "Penelope" || "Raveena" || "Ricardo" || "Ruben" || "Russell" || "Salli" || "Seoyeon" || "Takumi" || "Tatyana" || "Vicki" || "Vitoria" || "Zeina" || "Zhiyu" || "Aria" || "Ayanda" || "Arlet" || "Hannah" || "Arthur" || "Daniel" || "Liam" || "Pedro" || "Kajal" || "Hiujin" || "Laura" || "Elin" || "Ida" || "Suvi" || "Ola" || "Hala" || "Andres" || "Sergio" || "Remi" || "Adriano" || "Thiago" || "Ruth" || "Stephen" || "Kazuha" || "Tomoko" || "Niamh" || "Sofie" || "Lisa" || "Isabelle" || "Zayd" || "Danielle" || "Gregory" || "Burcu", // required
+
+      */
+      const command = new SynthesizeSpeechCommand({
+        // "LexiconNames": [
+        //   "example"
+        // ],
+        "OutputFormat": "ogg_vorbis",
+        "SampleRate": "8000",
+        "Text": textToAnalyze,
+        "TextType": "text",
+        "VoiceId": "Salli"
+      })
+      /** @type {ReadableStream} */
+      let audioStream: ReadableStream = new ReadableStream()
+
+      const response = await client.send(command).catch(err => {
+        console.warn(err.$response)
+        console.error(err)
+        audioStream = err.$response.body
+        console.log(err.$response.body)
+        if (err.$response.body) return err.$response.body
+      })
+      console.log('audioStream', audioStream)
+
+      console.log(response)
+
+
+
+      const reader = await audioStream.getReader()
+      const stream = new ReadableStream({
+        start(controller) {
+          return pump();
+          function pump() {
+            return reader.read().then(({ done, value }) => {
+              // When no more data needs to be consumed, close the stream
+              if (done) {
+                controller.close();
+                return;
+              }
+              // Enqueue the next data chunk into our target stream
+              controller.enqueue(value);
+              return pump();
+            });
+          }
+        },
+      });
+      const res = new Response(stream)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+
+      console.log('url', url)
+
+      const audio = new Audio()
+      audio.src = url
+      audio.play()
+
+
+      // this is the text I'll send to be read
+      // use amazon polly to read textToAnalyze
+
+
+
+    })
 
     // This creates an icon in the left ribbon.
     const promptBotBtn = this.addRibbonIcon('bot', 'ObsiBot', async (evt: MouseEvent) => {
