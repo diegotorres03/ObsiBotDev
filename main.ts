@@ -98,7 +98,7 @@ export default class ObsiBotPlugin extends Plugin {
         // sessionToken: this.settings.token || process.env.AWS_SESSION_TOKEN || ''
       }
       const client = new PollyClient({
-        region: 'us-east-2',
+        region: 'us-east-1',
         credentials
       })
 
@@ -106,15 +106,21 @@ export default class ObsiBotPlugin extends Plugin {
       //  VoiceId: "Aditi" || "Amy" || "Astrid" || "Bianca" || "Brian" || "Camila" || "Carla" || "Carmen" || "Celine" || "Chantal" || "Conchita" || "Cristiano" || "Dora" || "Emma" || "Enrique" || "Ewa" || "Filiz" || "Gabrielle" || "Geraint" || "Giorgio" || "Gwyneth" || "Hans" || "Ines" || "Ivy" || "Jacek" || "Jan" || "Joanna" || "Joey" || "Justin" || "Karl" || "Kendra" || "Kevin" || "Kimberly" || "Lea" || "Liv" || "Lotte" || "Lucia" || "Lupe" || "Mads" || "Maja" || "Marlene" || "Mathieu" || "Matthew" || "Maxim" || "Mia" || "Miguel" || "Mizuki" || "Naja" || "Nicole" || "Olivia" || "Penelope" || "Raveena" || "Ricardo" || "Ruben" || "Russell" || "Salli" || "Seoyeon" || "Takumi" || "Tatyana" || "Vicki" || "Vitoria" || "Zeina" || "Zhiyu" || "Aria" || "Ayanda" || "Arlet" || "Hannah" || "Arthur" || "Daniel" || "Liam" || "Pedro" || "Kajal" || "Hiujin" || "Laura" || "Elin" || "Ida" || "Suvi" || "Ola" || "Hala" || "Andres" || "Sergio" || "Remi" || "Adriano" || "Thiago" || "Ruth" || "Stephen" || "Kazuha" || "Tomoko" || "Niamh" || "Sofie" || "Lisa" || "Isabelle" || "Zayd" || "Danielle" || "Gregory" || "Burcu", // required
 
       */
+
+      // const lang = await askTitan(`are  you there?`)
+
+
       const command = new SynthesizeSpeechCommand({
         // "LexiconNames": [
         //   "example"
         // ],
-        "OutputFormat": "ogg_vorbis",
-        "SampleRate": "8000",
-        "Text": textToAnalyze,
-        "TextType": "text",
-        "VoiceId": "Salli"
+        Engine: textToAnalyze.length > 1_500 ? "long-form": "neural",
+        // Engine: "neural",
+        OutputFormat: "ogg_vorbis",
+        SampleRate: "8000",
+        Text: textToAnalyze,
+        TextType: "text",
+        VoiceId: "Emma"
       })
       /** @type {ReadableStream} */
       let audioStream: ReadableStream = new ReadableStream()
