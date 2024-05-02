@@ -14,6 +14,22 @@ import { TimestreamQueryClient, QueryCommand, QueryRequest } from '@aws-sdk/clie
 
 import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly'
 
+import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract'
+
+/**
+ * Use Textract to get text from image
+ *
+ * @param {*} image
+ */
+async function textFromImage(client: TextractClient, image) {
+  // const client = new TextractClient()
+  // const command = new AnalyzeDocumentCommand({
+  //   Document: {
+  //     Bytes: new Uint8Array()
+  //   }
+  // })
+}
+
 /**
  * query AWS Timestream table
  *
@@ -78,6 +94,28 @@ export default class ObsiBotPlugin extends Plugin {
 
     addIcon('audio-waveform', '<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-audio-lines"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>')
 
+    const imageToTextBtn = this.addRibbonIcon('microscope', 'extract text from image', async (event: MouseEvent) => {
+      const client = new TextractClient({ region: 'us-east-2' })
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+
+      if (!view) return
+      const editor = view.editor
+      const matches = view.data.match(/!\[\[(.+?)\]\]/g) || []
+      // const matchesSet = new Set(matches?.map(item =>
+      //   item.replace('[[', '').replace(']]', '')))
+      console.log('TextFromImage-----')
+      console.log(matches)
+
+      const promises = matches.map(match => {
+        console.log('match', match)
+        if(!match) return
+        // return this.app.vault.readBinary('./' + match.replace('![[', '').replace(']]', ''))
+      })
+      const res = await Promise.all(promises)
+      console.log(res)
+      // await textFromImage(clieng, )
+    })
+
     // Read Selected Text or the entire page
     const readTextBtn = this.addRibbonIcon('audio-waveform', 'Read out loud', async (event: MouseEvent) => {
       new Notice('readong out loud!')
@@ -114,7 +152,7 @@ export default class ObsiBotPlugin extends Plugin {
         // "LexiconNames": [
         //   "example"
         // ],
-        Engine: textToAnalyze.length > 1_500 ? "long-form": "neural",
+        Engine: textToAnalyze.length > 1_500 ? "long-form" : "neural",
         // Engine: "neural",
         OutputFormat: "ogg_vorbis",
         SampleRate: "8000",
