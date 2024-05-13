@@ -21,13 +21,24 @@ import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract
  *
  * @param {*} image
  */
-async function textFromImage(client: TextractClient, image) {
-  // const client = new TextractClient()
-  // const command = new AnalyzeDocumentCommand({
-  //   Document: {
-  //     Bytes: new Uint8Array()
-  //   }
-  // })
+async function textFromImage(client: TextractClient, image: ArrayBuffer) {
+
+  // convert image to Unit8Array
+  const bytes = new Uint8Array(image)
+
+  console.log('ready to send unit8array', bytes)
+
+  const command = new AnalyzeDocumentCommand({
+    Document: {
+      Bytes: bytes,
+    },
+
+    FeatureTypes: ['LAYOUT']
+  })
+
+  const res = await client.send(command)
+  return res
+
 }
 
 /**
@@ -95,12 +106,26 @@ export default class ObsiBotPlugin extends Plugin {
     addIcon('audio-waveform', '<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-audio-lines"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>')
 
     const imageToTextBtn = this.addRibbonIcon('microscope', 'extract text from image', async (event: MouseEvent) => {
-      const client = new TextractClient({ region: 'us-east-2' })
+
+
+
+      const credentials = {
+        accessKeyId: this.settings.awsKeyId || process.env.AWS_KEY_ID || '', secretAccessKey: this.settings.awsSecretKey || process.env.AWS_SECRET_KEY || '',
+        sessionToken: this.settings.awsSessionToken || process.env.AWS_SESSION_TOKEN || ''
+      }
+      const client = new TextractClient({
+        region: 'us-east-2',
+        credentials,
+      })
       const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+
+
 
       if (!view) return
       const editor = view.editor
-      const matches = view.data.match(/!\[\[(.+?)\]\]/g) || []
+      let content = editor.getSelection()
+      if (content === '') content = editor.getValue()
+      const matches = content.match(/!\[\[(.+?)\]\]/g) || []
       // const matchesSet = new Set(matches?.map(item =>
       //   item.replace('[[', '').replace(']]', '')))
       console.log('TextFromImage-----')
@@ -108,17 +133,82 @@ export default class ObsiBotPlugin extends Plugin {
 
       const promises = matches.map(match => {
         console.log('match', match)
-        if(!match) return
-        // return this.app.vault.readBinary('./' + match.replace('![[', '').replace(']]', ''))
+        if (!match) return
+        const fileName = match.replace('![[', '').replace(']]', '')
+        // const file = this.app.vault.getAbstractFileByPath(fileName)
+        const file = this.app.vault.getFileByPath(fileName)
+
+        console.log('file by name', file)
+        return file
       })
       const res = await Promise.all(promises)
+      const binaries = await Promise.all(res.map(file => {
+        if (!file) return
+        return this.app.vault.readBinary(file)
+      }))
       console.log(res)
-      // await textFromImage(clieng, )
+      console.log(binaries)
+
+      // now send it to textract
+
+
+      binaries.map((binary, imageIndex) => {
+        if (!binary) return
+        textFromImage(client, binary)
+          .then(textResponse => {
+            console.log(textResponse)
+            if (!textResponse.Blocks) return
+
+            console.log(JSON.stringify(textResponse.Blocks[150], undefined, 2))
+
+            let mermaid = `mermaid\ngraph LR\n`
+            let lines = textResponse.Blocks.map((block, index) => {
+              if (block.BlockType && block.BlockType in ["Page", "Line"]) return
+              const id = block.Id
+              // let line = `\n  id_${id}(${block.Text}) -- id_${id}`
+              let line = ``
+              block.Relationships?.forEach(rel => {
+                rel.Ids?.forEach(relId => {
+                  line += `\n  id_${id}[${block.BlockType === 'WORD' ? block.BlockType : block.BlockType}] -- ${rel.Type} --> id_${relId
+                    }`
+                })
+              })
+              if (!block.Relationships) {
+                console.log('Word?', block)
+                line += `\n  id_${id}[${block.BlockType === 'WORD' ? block.Text : block.BlockType}]`
+              }
+
+              return line
+            })
+
+            mermaid += lines.join('\n')
+
+            console.log(mermaid)
+
+            const texts = textResponse.Blocks
+              .filter(block => !!block.Text)
+              .filter(block => block.BlockType === 'LINE')
+              .map(block => block.Text)
+
+            console.log(texts)
+            const currentCursor = editor.getCursor()
+            if (this.settings.alwaysInsertAtTheEnd) editor.setCursor(editor.lastLine())
+
+
+            editor.replaceRange(
+              `\n\n text for image no. ${imageIndex + 1} is:\n\n${texts.join('\n')}`,
+              editor.getCursor()
+            );
+            editor.setCursor(currentCursor)
+            return texts
+          })
+
+      })
     })
 
     // Read Selected Text or the entire page
     const readTextBtn = this.addRibbonIcon('audio-waveform', 'Read out loud', async (event: MouseEvent) => {
-      new Notice('readong out loud!')
+      new Notice('reading out loud!')
 
       const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 
@@ -126,14 +216,72 @@ export default class ObsiBotPlugin extends Plugin {
       const editor = view.editor
       const selection = editor.getSelection()
 
-      const textToAnalyze = selection || view.data
+
+      // If is not a selection split the whole file in chunks of about 1500 characters
+
+      const MAX_LENGTH = 1500 // for polly neural
+
+      function splitLongText(text, maxLength) {
+
+        console.group('splitLongText')
+
+        // Split the text into an array of words
+        const words = text.split(' ');
+
+        // Initialize an array to store the chunks
+        const chunks = [] as string[]
+
+        // Initialize a variable to store the current chunk
+        let currentChunk = '';
+
+        // Iterate through the words
+        for (let i = 0; i < words.length; i++) {
+          const word = words[i];
+
+          // If adding the current word to the current chunk would make it too long,
+          // push the current chunk to the chunks array and start a new chunk
+          if (currentChunk.length + word.length > maxLength) {
+            chunks.push(currentChunk.trim());
+            currentChunk = '';
+          }
+
+          // Add the current word to the current chunk
+          currentChunk += ' ' + word;
+        }
+
+        // Push the last chunk to the chunks array
+        if (currentChunk.trim() !== '') {
+          chunks.push(currentChunk.trim());
+        }
+
+        console.log(chunks)
+        console.groupEnd()
+        return chunks;
+      }
+
+
+      const getChunks = (inputText: string) => {
+
+        if (inputText.length < MAX_LENGTH) return [inputText]
+
+        // split text by double enter globally
+        let chunks = inputText.split(/\r?\n\r?\n/g)
+        console.log(chunks.map(str => str.length))
+        chunks = chunks.map(chunk =>
+          chunk.length < MAX_LENGTH ? chunk : splitLongText(chunk, MAX_LENGTH)).flat()
+        return chunks
+      }
+
+      // const textToAnalyze = selection || view.data
+      const textToAnalyze = getChunks(selection || view.data).flat()
 
       console.log('preparing to read out loud')
       console.log(textToAnalyze)
 
+
       const credentials = {
         accessKeyId: this.settings.awsKeyId || process.env.AWS_KEY_ID || '', secretAccessKey: this.settings.awsSecretKey || process.env.AWS_SECRET_KEY || '',
-        // sessionToken: this.settings.token || process.env.AWS_SESSION_TOKEN || ''
+        sessionToken: this.settings.awsSessionToken || process.env.AWS_SESSION_TOKEN || ''
       }
       const client = new PollyClient({
         region: 'us-east-1',
@@ -148,66 +296,83 @@ export default class ObsiBotPlugin extends Plugin {
       // const lang = await askTitan(`are  you there?`)
 
 
-      const command = new SynthesizeSpeechCommand({
-        // "LexiconNames": [
-        //   "example"
-        // ],
-        Engine: textToAnalyze.length > 1_500 ? "long-form" : "neural",
-        // Engine: "neural",
-        OutputFormat: "ogg_vorbis",
-        SampleRate: "8000",
-        Text: textToAnalyze,
-        TextType: "text",
-        VoiceId: "Emma"
-      })
-      /** @type {ReadableStream} */
-      let audioStream: ReadableStream = new ReadableStream()
+      async function textToSpeech(client, text, options?: { lang?: string, voice?: string }) {
+        const voices = {
+          'en': ['Emma'],
+          'es': ['Lucia']
+        }
+        const command = new SynthesizeSpeechCommand({
+          // "LexiconNames": [
+          //   "example"
+          // ],
+          Engine: "neural",
+          // Engine: "neural",
+          OutputFormat: "ogg_vorbis",
+          SampleRate: "8000",
+          Text: text,
+          TextType: "text",
+          VoiceId: "Emma" // "Lucia",// 
+        })
+        /** @type {ReadableStream} */
+        let audioStream: ReadableStream = new ReadableStream()
 
-      const response = await client.send(command).catch(err => {
-        console.warn(err.$response)
-        console.error(err)
-        audioStream = err.$response.body
-        console.log(err.$response.body)
-        if (err.$response.body) return err.$response.body
-      })
-      console.log('audioStream', audioStream)
+        const response = await client.send(command).catch(err => {
+          console.warn(err.$response)
+          console.error(err)
+          audioStream = err.$response.body
+          console.log(err.$response.body)
+          if (err.$response.body) return err.$response.body
+        })
+        console.log(response)
+        return audioStream
+      }
 
-      console.log(response)
+      async function playAudio(audioStream) {
 
-
-
-      const reader = await audioStream.getReader()
-      const stream = new ReadableStream({
-        start(controller) {
-          return pump();
-          function pump() {
-            return reader.read().then(({ done, value }) => {
-              // When no more data needs to be consumed, close the stream
-              if (done) {
-                controller.close();
-                return;
-              }
-              // Enqueue the next data chunk into our target stream
-              controller.enqueue(value);
-              return pump();
-            });
-          }
-        },
-      });
-      const res = new Response(stream)
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-
-      console.log('url', url)
-
-      const audio = new Audio()
-      audio.src = url
-      audio.play()
+        console.log('audioStream', audioStream)
 
 
-      // this is the text I'll send to be read
-      // use amazon polly to read textToAnalyze
+        const reader = await audioStream.getReader()
+        const stream = new ReadableStream({
+          start(controller) {
+            return pump();
+            function pump() {
+              return reader.read().then(({ done, value }) => {
+                // When no more data needs to be consumed, close the stream
+                if (done) {
+                  controller.close();
+                  return;
+                }
+                // Enqueue the next data chunk into our target stream
+                controller.enqueue(value);
+                return pump();
+              });
+            }
+          },
+        });
+        const res = new Response(stream)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
 
+        const audio = new Audio()
+        audio.src = url
+        // audio.play()
+        return audio
+      }
+
+      // const textAudios = await Promise.all(textToAnalyze.map(text => textToSpeech(client, text)))
+
+      for (let text of textToAnalyze) {
+        console.info('proceeding to read another chunk of text')
+        const audioStream = await textToSpeech(client, text)
+        const audio = await playAudio(audioStream)
+
+        const promise = new Promise(resolve =>
+          audio.play()
+            .then(() => audio.addEventListener('ended', resolve)))
+
+        await promise
+      }
 
 
     })
@@ -256,13 +421,6 @@ export default class ObsiBotPlugin extends Plugin {
 
 
 
-      // console.log(relevantContent)
-      // editor.replaceRange(prompt,
-      //   editor.getCursor()
-      // );
-      // return
-
-
       askClaude(prompt)
         .then(response => {
 
@@ -305,7 +463,7 @@ export default class ObsiBotPlugin extends Plugin {
 
       const credentials = {
         accessKeyId: this.settings.awsKeyId || process.env.AWS_KEY_ID || '', secretAccessKey: this.settings.awsSecretKey || process.env.AWS_SECRET_KEY || '',
-        // sessionToken: this.settings.token || process.env.AWS_SESSION_TOKEN || ''
+        sessionToken: this.settings.awsSessionToken || process.env.AWS_SESSION_TOKEN || ''
       }
 
       const client = new TimestreamQueryClient({

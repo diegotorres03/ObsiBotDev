@@ -27,10 +27,13 @@
 		"@aws-sdk/client-textract": "^3.567.0",
 		"@aws-sdk/client-timestream-query": "^3.556.0",
 		"@aws-sdk/client-transcribe": "^3.567.0",
+		"@aws-sdk/client-translate": "^3.569.0",
 		"@lancedb/vectordb-linux-x64-gnu": "^0.4.16",
 		"aws-sdk": "^2.1603.0",
 		"buffer": "^6.0.3",
+		"cheerio": "1.0.0-rc.12",
 		"install": "^0.13.0",
-		"npm": "^10.7.0"
+		"npm": "^10.7.0",
+		"turndown": "^7.1.3"
 	}
 }
