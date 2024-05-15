@@ -2,15 +2,16 @@ import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Set
 
 import {
   changeCredentials,
-  html,
+  // html,
   askClaude,
-  askTitan,
+  // askTitan,
 } from './bedrock-tools'
 // } from '../../../../tools'
 
 
-import { TimestreamQueryClient, QueryCommand, QueryRequest } from '@aws-sdk/client-timestream-query'
-
+import { TimestreamQueryClient, QueryCommand } from '@aws-sdk/client-timestream-query'
+import { TranscribeClient, StartTranscriptionJobCommand } from '@aws-sdk/client-transcribe'
+import { TranscribeStreamingClient, StartStreamTranscriptionCommand } from '@aws-sdk/client-transcribe-streaming'
 
 import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly'
 
@@ -88,6 +89,15 @@ const DEFAULT_SETTINGS: ObsiBotPluginSettings = {
   alwaysInsertAtTheEnd: false
 }
 
+/*
+Docs en 
+https://docs.obsidian.md/Plugins/Getting+started/Build+a+plugin
+
+Iconos en
+https://lucide.dev/
+
+*/
+
 export default class ObsiBotPlugin extends Plugin {
   settings: ObsiBotPluginSettings;
 
@@ -105,7 +115,25 @@ export default class ObsiBotPlugin extends Plugin {
 
     addIcon('audio-waveform', '<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-audio-lines"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>')
 
-    const imageToTextBtn = this.addRibbonIcon('microscope', 'extract text from image', async (event: MouseEvent) => {
+    this.addRibbonIcon('mic', 'speech to text', async (event: MouseEvent) => {
+      // get user media
+
+      const constraints = { audio: true }
+
+      navigator.mediaDevices
+        .getUserMedia(constraints)
+        .then(stream => {
+          console.log('stream', stream)
+          const audioTracks = stream.getAudioTracks()
+          console.log('audioTracks', audioTracks)
+          
+        })
+
+
+    })
+
+    // const imageToTextBtn = 
+    this.addRibbonIcon('microscope', 'extract text from image', async (event: MouseEvent) => {
 
 
 
@@ -162,7 +190,7 @@ export default class ObsiBotPlugin extends Plugin {
             console.log(JSON.stringify(textResponse.Blocks[150], undefined, 2))
 
             let mermaid = `mermaid\ngraph LR\n`
-            let lines = textResponse.Blocks.map((block, index) => {
+            const lines = textResponse.Blocks.map((block, index) => {
               if (block.BlockType && block.BlockType in ["Page", "Line"]) return
               const id = block.Id
               // let line = `\n  id_${id}(${block.Text}) -- id_${id}`
@@ -207,7 +235,8 @@ export default class ObsiBotPlugin extends Plugin {
     })
 
     // Read Selected Text or the entire page
-    const readTextBtn = this.addRibbonIcon('audio-waveform', 'Read out loud', async (event: MouseEvent) => {
+    // const readTextBtn = 
+    this.addRibbonIcon('audio-waveform', 'Read out loud', async (event: MouseEvent) => {
       new Notice('reading out loud!')
 
       const view = this.app.workspace.getActiveViewOfType(MarkdownView)
@@ -297,10 +326,10 @@ export default class ObsiBotPlugin extends Plugin {
 
 
       async function textToSpeech(client, text, options?: { lang?: string, voice?: string }) {
-        const voices = {
-          'en': ['Emma'],
-          'es': ['Lucia']
-        }
+        // const voices = {
+        //   'en': ['Emma'],
+        //   'es': ['Lucia']
+        // }
         const command = new SynthesizeSpeechCommand({
           // "LexiconNames": [
           //   "example"
@@ -362,7 +391,7 @@ export default class ObsiBotPlugin extends Plugin {
 
       // const textAudios = await Promise.all(textToAnalyze.map(text => textToSpeech(client, text)))
 
-      for (let text of textToAnalyze) {
+      for (const text of textToAnalyze) {
         console.info('proceeding to read another chunk of text')
         const audioStream = await textToSpeech(client, text)
         const audio = await playAudio(audioStream)
@@ -398,7 +427,7 @@ export default class ObsiBotPlugin extends Plugin {
       if (prompt === '') prompt = editor.getValue()
       const allfiles = this.app.vault.getMarkdownFiles()
 
-      let relevantFiles = allfiles.filter(file => matchesSet.has(file.name.replace('.md', '')))
+      const relevantFiles = allfiles.filter(file => matchesSet.has(file.name.replace('.md', '')))
 
       console.log('relevantFiles')
       console.log(relevantFiles)
@@ -438,7 +467,8 @@ export default class ObsiBotPlugin extends Plugin {
     // Perform additional things with the ribbon
     promptBotBtn.addClass('my-plugin-ribbon-class');
 
-    const queryDBBtn = this.addRibbonIcon('database', 'Query DB', async (evt: MouseEvent) => {
+    // const queryDBBtn = 
+    this.addRibbonIcon('database', 'Query DB', async (evt: MouseEvent) => {
       // Called when the user clicks the icon.
       new Notice('querying db!');
       const view = this.app.workspace.getActiveViewOfType(MarkdownView)
